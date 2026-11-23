@@ -21,6 +21,13 @@ import {
   esc,
 } from "./maps.mjs";
 import { icon, brandMark } from "./icons.mjs";
+import {
+  activeRecords,
+  blankInventory,
+  county,
+  toCandidate,
+} from "./inventory.mjs";
+import { inquiryContent, shortlist } from "./inquiries.mjs";
 import { editor } from "./editor.mjs";
 const $ = (s) => document.querySelector(s),
   all = (s) => [...document.querySelectorAll(s)];
@@ -48,8 +55,24 @@ try {
   mine = [];
   storeIssue = true;
 }
+let inventory = blankInventory(),
+  inventoryError = false,
+  loadedInventory = false;
+const replyKey = (id) => "franchmap.brandReply.v1." + id;
+function inventoryCandidates() {
+  return activeRecords(inventory).map((row, i) => {
+    let reply;
+    try {
+      reply = JSON.parse(
+        localStorage.getItem(replyKey(row.source + ":" + row.sourceId)) ||
+          "null",
+      );
+    } catch {}
+    return toCandidate(row, i + 1, reply);
+  });
+}
 const state = {
-  mode: mine.length ? "mine" : "demo",
+  mode: "inventory",
   geo: null,
   zone: null,
   focus: null,
@@ -61,12 +84,22 @@ const state = {
   dialog: "",
   cleanup: null,
 };
-const catalog = () => [...mine, ...demos],
+const catalog = () => [...inventoryCandidates(), ...mine, ...demos],
   item = (id) => catalog().find((c) => c.id === id);
 const visible = () =>
-  (state.mode === "mine" ? mine : demos)
+  (state.mode === "mine"
+    ? mine
+    : state.mode === "inventory"
+      ? inventoryCandidates()
+      : demos
+  )
     .filter(
-      (c) => !state.zone || inGeometry([c.lng, c.lat], state.zone.geometry),
+      (c) =>
+        !state.zone ||
+        (c.imported &&
+          state.zone.properties.type === "county" &&
+          state.zone.properties.name === "Miami-Dade") ||
+        inGeometry([c.lng, c.lat], state.zone.geometry),
     )
     .map((c) => ({ c, e: evaluate(c) }))
     .sort(
@@ -200,9 +233,15 @@ function drawCards() {
     b.setAttribute("aria-pressed", on);
   });
   $("#mode-note").innerHTML =
-    state.mode === "demo"
-      ? icon("lab", 15) + "Datos simulados · sin oferta comercial"
-      : icon("list", 15) + "Guardados en este navegador";
+    state.mode === "inventory"
+      ? "<span>Miami-Dade County · " +
+        (inventory.imports.mdc
+          ? "consultado el " + ddate(inventory.imports.mdc)
+          : "Catálogo de venta") +
+        '</span><button class="text-action" data-do="review">Consultas</button>'
+      : state.mode === "demo"
+        ? icon("lab", 15) + "Datos simulados · sin oferta comercial"
+        : icon("list", 15) + "Guardados en este navegador";
   $("#cards").innerHTML = rows.length
     ? rows
         .map(
@@ -216,7 +255,7 @@ function drawCards() {
             "</span><span><strong>" +
             esc(c.name) +
             "</strong><small>" +
-            esc(c.address) +
+            esc(c.imported ? "Folio " + c.sourceId : c.address) +
             " · " +
             esc(c.city || c.zip || profile.market) +
             "</small></span>" +
@@ -224,14 +263,22 @@ function drawCards() {
             '</span><span class="card-metrics"><span>' +
             icon("area", 14) +
             (c.values.area != null
-              ? fmt(c.values.area) + " ft²"
-              : "Terreno sin dato") +
+              ? fmt(c.values.area) + " ft² útiles"
+              : c.values.totalArea != null
+                ? fmt(c.values.totalArea) + " ft² totales"
+                : "Terreno sin dato") +
             "</span><span>" +
             icon("front", 14) +
-            (c.values.front != null
-              ? fmt(c.values.front) + " ft de frente"
-              : "Frente sin dato") +
-            '</span></span></button><div class="card-bottom">' +
+            (c.imported
+              ? "En catálogo de venta"
+              : c.values.front != null
+                ? fmt(c.values.front) + " ft de frente"
+                : "Frente sin dato") +
+            "</span></span>" +
+            (c.imported && e.fails.some((r) => r.key === "area")
+              ? '<span class="card-decision">La parcela no alcanza los 45,000 ft² útiles.</span>'
+              : "") +
+            '</button><div class="card-bottom">' +
             labelState(e.state) +
             '<label class="pick"><input type="checkbox" data-pick="' +
             esc(c.id) +
@@ -241,11 +288,18 @@ function drawCards() {
         )
         .join("")
     : '<div class="empty">' +
-      (state.zone
-        ? "No hay candidatos dentro de esta zona. " +
-          btn("reset-zone", "Ver todo el mercado", "map")
-        : "Aún no has agregado locales. Guarda una dirección para evaluar el terreno. " +
-          btn("add", "Agregar local", "plus")) +
+      (state.mode === "inventory" && (!loadedInventory || inventoryError)
+        ? inventoryError
+          ? "No se pudo cargar el inventario. " +
+            btn("reload-inventory", "Reintentar", "list")
+          : "Cargando el catálogo de venta…"
+        : state.zone
+          ? "No hay candidatos dentro de esta zona. " +
+            btn("reset-zone", "Ver todo el mercado", "map")
+          : state.mode === "inventory"
+            ? "El catálogo consultado no incluye terrenos en la muestra."
+            : "Aún no has agregado locales. Guarda una dirección para evaluar el terreno. " +
+              btn("add", "Agregar local", "plus")) +
       "</div>";
   setCount();
 }
@@ -274,7 +328,10 @@ function render() {
   drawMap();
 }
 function fit() {
-  if (state.zone) {
+  if (
+    state.zone &&
+    !(state.zone.properties.type === "county" && visible().length)
+  ) {
     map.fitBounds(L.geoJSON(state.zone.geometry).getBounds(), {
       padding: [25, 25],
       maxZoom: 14,
@@ -382,9 +439,11 @@ const norm = (s) =>
 geography
   .then((g) => {
     state.geo = g;
-    $("#zones").innerHTML = g.zones
-      .map((f) => '<option value="' + esc(f.properties.name) + '"></option>')
-      .join("");
+    $("#zones").innerHTML =
+      '<option value="Culver’s en Miami-Dade"></option>' +
+      [...g.counties, ...g.zones]
+        .map((f) => '<option value="' + esc(f.properties.name) + '"></option>')
+        .join("");
   })
   .catch(() =>
     toast(
@@ -402,8 +461,15 @@ $("#filters").onsubmit = (e) => {
     toast("Cargando los límites geográficos.");
     return;
   }
-  const clean = q.replace(/,?\s+(fl|florida)$/, "");
-  const match = state.geo.zones.find((f) => norm(f.properties.name) === clean);
+  const marketQuery = /^culver['’]?s\s+(?:en\s+)?miami[- ]dade$/i.test(q);
+  if (marketQuery) state.mode = "inventory";
+  const clean = (marketQuery ? "miami-dade" : q).replace(
+    /,?\s+(fl|florida)$/,
+    "",
+  );
+  const match = [...state.geo.counties, ...state.geo.zones].find(
+    (f) => norm(f.properties.name) === clean,
+  );
   if (match) {
     cancelDraw();
     setZone(match);
@@ -541,7 +607,37 @@ function showDetail(id) {
     (c.listingDate ? ddate(c.listingDate) : "Sin fecha de anuncio") +
     "</span></div>";
   if (c.listingUrl)
-    body += "<p>" + alink(c.listingUrl, "Ver anuncio aportado") + "</p>";
+    body +=
+      "<p>" +
+      alink(
+        c.listingUrl,
+        c.imported
+          ? "Ver página del catálogo de venta"
+          : "Ver anuncio aportado",
+      ) +
+      "</p>";
+  if (c.imported) {
+    body +=
+      '<div class="parcel-facts"><div><small>Folio del condado</small><strong>' +
+      esc(c.sourceId) +
+      "</strong></div><div><small>Terreno total</small><strong>" +
+      esc(formVal("totalArea", c.values.totalArea)) +
+      "</strong></div><div><small>Terreno útil</small><strong>" +
+      esc(formVal("area", c.values.area)) +
+      "</strong></div><div><small>Edificio existente</small><strong>" +
+      esc(formVal("buildingArea", c.values.buildingArea)) +
+      '</strong></div></div><p class="minor">Catálogo consultado el ' +
+      ddate(c.date) +
+      ". " +
+      alink(c.sourceUrl, "Registro GIS") +
+      " · " +
+      alink(c.propertyCard, "Ficha catastral") +
+      " · " +
+      alink(county.auctions, "Licitaciones abiertas") +
+      ". La ubicación del mapa es aproximada. Zonificación registrada: " +
+      esc(c.zoning || "sin dato") +
+      ". El permiso de drive-thru requiere documentación específica.</p>";
+  }
   body +=
     '<p class="minor">' +
     esc(profile.brand + " · " + profile.market + " · " + profile.format) +
@@ -557,7 +653,9 @@ function showDetail(id) {
       "secondary",
       id,
     ) +
-    (c.demo ? "" : btn("edit", "Editar datos", "edit", "secondary", id)) +
+    (c.demo || c.imported
+      ? ""
+      : btn("edit", "Editar datos", "edit", "secondary", id)) +
     btn("locate", "Ver ubicación", "pin", "secondary", id) +
     "</div><h3>Requisitos obligatorios · " +
     e.passed +
@@ -579,13 +677,143 @@ function showDetail(id) {
     ' km en línea recta (cálculo geográfico). Cobertura parcial. La distancia informativa por sí sola no acredita exclusividad.</p><div class="dialog-actions">' +
     btn("territory-map", "Ver referencias en el mapa", "map", "secondary", id) +
     '</div><p class="minor">La aprobación final corresponde a Culver’s.</p>';
+  if (c.imported) {
+    if (c.brandReply)
+      body +=
+        "<h3>Respuesta registrada</h3><p>" +
+        esc(c.brandReply.sender) +
+        " · " +
+        ddate(c.brandReply.date) +
+        " · " +
+        alink(c.brandReply.source, "Ver respuesta") +
+        "</p><p>" +
+        esc(c.brandReply.text) +
+        "</p>";
+    body += btn(
+      "brand-reply",
+      "Registrar respuesta de Culver’s",
+      "doc",
+      "secondary",
+      c.id,
+    );
+  }
   dialog(c.name, subtitle, body, "detail");
+}
+function showReview() {
+  const list = inventoryCandidates();
+  const leads = shortlist(list);
+  const screened = list.filter((c) => evaluate(c).state === "bad");
+  let body =
+    '<p class="notice">' +
+    (list.length
+      ? list.length +
+        " terrenos revisados · " +
+        screened.length +
+        " descartados · " +
+        leads.length +
+        " para consulta."
+      : "No hay terrenos cargados para revisar.") +
+    "</p>";
+  if (!leads.length) {
+    if (
+      list.length &&
+      screened.length === list.length &&
+      list.every((c) => c.values.totalArea < 45000)
+    )
+      body +=
+        "<p>El mayor tiene " +
+        fmt(Math.max(...list.map((c) => c.values.totalArea))) +
+        " ft² totales. Culver’s exige 45,000 ft² útiles. Ninguno justifica una visita para este formato.</p>";
+    body += inquiryContent(null);
+  }
+  for (const { c, e } of leads) {
+    body +=
+      "<h3>" +
+      esc(c.name) +
+      "</h3><p>Folio " +
+      esc(c.sourceId) +
+      " · " +
+      esc(c.availability) +
+      " · consultado el " +
+      ddate(c.date) +
+      ". " +
+      e.passed +
+      " de " +
+      e.required +
+      " obligatorios acreditados. " +
+      esc(e.next) +
+      "</p>" +
+      btn("detail", "Ver ficha y evidencia", "doc", "secondary", c.id) +
+      inquiryContent(c);
+  }
+  dialog(
+    "Consultas a Culver’s",
+    "Miami-Dade · Restaurante independiente con drive-thru",
+    body,
+    "review",
+  );
+}
+function recordBrandReply(c) {
+  if (!c?.imported) return;
+  const old = c.brandReply || {};
+  const field = (key, type, label) =>
+    "<label><span>" +
+    label +
+    '</span><input required type="' +
+    type +
+    '" name="' +
+    key +
+    '" value="' +
+    esc(old[key] || "") +
+    '"></label>';
+  const body =
+    '<p>Registra la respuesta escrita sobre este folio. Se conserva en este navegador.</p><form id="brand-response" class="form-grid">' +
+    field("sender", "text", "Remitente de Culver’s") +
+    field("date", "date", "Fecha de respuesta") +
+    field("source", "url", "Enlace al correo o documento") +
+    '<label><span>Decisión sobre este terreno</span><select name="result"><option value="inconclusive">Pendiente de confirmación</option><option value="available">La marca confirmó territorio disponible</option><option value="unavailable">La marca confirmó territorio no disponible</option></select></label><label class="span2"><span>Texto de la respuesta que identifica la parcela</span><textarea required name="text">' +
+    esc(old.text || "") +
+    '</textarea></label><button class="primary" type="submit">Guardar respuesta</button></form>';
+  dialog(
+    "Registrar respuesta de la marca",
+    c.address + " · " + c.sourceId,
+    body,
+    "reply",
+  );
+  const f = $("#brand-response");
+  f.elements.result.value = old.result || "inconclusive";
+  f.onsubmit = (ev) => {
+    ev.preventDefault();
+    const reply = { siteId: c.id };
+    for (const k of ["sender", "date", "source", "result", "text"])
+      reply[k] = f.elements[k].value.trim();
+    if (!safeUrl(reply.source) || !reply.sender || !reply.text) {
+      toast("Completa la respuesta y su enlace.");
+      return;
+    }
+    try {
+      localStorage.setItem(replyKey(c.id), JSON.stringify(reply));
+    } catch {
+      toast("No se pudo guardar la respuesta.");
+      return;
+    }
+    showDetail(c.id);
+  };
 }
 function comparison() {
   const chosen = catalog().filter((c) => state.selection.has(c.id)),
     selection =
       '<div class="compare-pick">' +
       catalog()
+        .filter(
+          (c) =>
+            state.selection.has(c.id) ||
+            (state.mode === "inventory"
+              ? c.imported
+              : state.mode === "demo"
+                ? c.demo
+                : !c.imported && !c.demo),
+        )
         .map(
           (c) =>
             '<label><input type="checkbox" data-pick="' +
@@ -606,7 +834,13 @@ function comparison() {
       ["Estado", es.map((e) => labelState(e.state))],
       [
         "Datos",
-        chosen.map((c) => (c.demo ? "Ejemplo simulado" : "Local registrado")),
+        chosen.map((c) =>
+          c.demo
+            ? "Ejemplo simulado"
+            : c.imported
+              ? county.name
+              : "Local registrado",
+        ),
       ],
       [
         "Disponibilidad",
@@ -617,6 +851,30 @@ function comparison() {
             (c.listingDate ? ddate(c.listingDate) : "Sin fecha de anuncio") +
             "</small>",
         ),
+      ],
+      [
+        "Fuente del anuncio",
+        chosen.map((c) =>
+          c.listingUrl
+            ? alink(c.listingUrl, c.sourceId || "Ver anuncio")
+            : "Sin enlace",
+        ),
+      ],
+      [
+        "Fecha de consulta",
+        chosen.map((c) => (c.imported ? ddate(c.date) : "Sin registrar")),
+      ],
+      [
+        "Terreno total",
+        chosen.map((c) => esc(formVal("totalArea", c.values.totalArea))),
+      ],
+      [
+        "Terreno útil documentado",
+        chosen.map((c) => esc(formVal("area", c.values.area))),
+      ],
+      [
+        "Edificio existente",
+        chosen.map((c) => esc(formVal("buildingArea", c.values.buildingArea))),
       ],
       ["Precio", chosen.map((c) => esc(money(c)))],
       ["Preferencias cumplidas", es.map((e) => e.prefs)],
@@ -672,6 +930,11 @@ function exportCsv() {
       "Disponibilidad",
       "Precio USD",
       "Unidad precio",
+      "Folio",
+      "Consulta",
+      "Terreno total ft²",
+      "Terreno útil ft²",
+      "Edificio ft²",
       ...evaluate(cs[0]).rows.map((r) => r.name),
     ],
   ];
@@ -681,7 +944,7 @@ function exportCsv() {
       c.name,
       c.lat,
       c.lng,
-      c.demo ? "Ejemplo" : "Usuario",
+      c.demo ? "Ejemplo" : c.imported ? county.name : "Usuario",
       profile.brand,
       profile.format,
       statuses[e.state].label,
@@ -690,6 +953,11 @@ function exportCsv() {
       c.availability || "",
       c.price ?? "",
       c.priceUnit || "",
+      c.sourceId || "",
+      c.imported ? c.date : "",
+      c.values.totalArea ?? "",
+      c.values.area ?? "",
+      c.values.buildingArea ?? "",
       ...e.rows.map(
         (r) =>
           r.actual +
@@ -784,7 +1052,25 @@ function sources(rules = false) {
         "https://gisms.miamidade.gov/arcgis/rest/services/MDC_LocatorsPro/GeoAddress/GeocodeServer",
         "Miami-Dade GIS",
       ) +
-      '<div class="source-row"><strong>Origen de los locales</strong><p>Ejemplos ficticios y locales ingresados por el usuario. No hay un inventario comercial conectado. El usuario puede registrar enlace, precio, unidad y fecha de un anuncio.</p></div></div>';
+      sr(
+        "Terrenos en venta del condado",
+        "Muestra de hasta ocho terrenos vacantes, ordenados por superficie total. Se cruzan el catálogo de venta, el inventario GIS y el catastro. La fecha de consulta corresponde a la extracción.",
+        county.sale,
+        "Catálogo de venta",
+      ) +
+      sr(
+        "Datos abiertos y uso",
+        "Miami-Dade permite descargar, visualizar, integrar y compartir los datos de su portal. Las ubicaciones y superficies son aproximadas.",
+        county.reuse,
+        "Miami-Dade Open Data Hub",
+      ) +
+      sr(
+        "Inventario GIS",
+        "County Owned Property identifica uso, folio y estado. Solo aparecen en Inventario los terrenos que también figuran en el catálogo de venta.",
+        county.data,
+        "County Owned Property",
+      ) +
+      "</div>";
   body +=
     '<p class="minor">Consulta de fuentes de la marca: ' +
     ddate(profile.checked) +
@@ -887,6 +1173,7 @@ document.addEventListener("click", (ev) => {
   if (
     [
       "demo",
+      "inventory",
       "mine",
       "fit",
       "draw",
@@ -902,6 +1189,16 @@ document.addEventListener("click", (ev) => {
     case "explore":
       close();
       break;
+    case "review":
+      showReview();
+      break;
+    case "brand-reply":
+      recordBrandReply(item(id));
+      break;
+    case "reload-inventory":
+      loadInventory();
+      break;
+    case "inventory":
     case "demo":
     case "mine":
       state.mode = a;
@@ -1008,6 +1305,10 @@ document.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("storage", (e) => {
+  if (e.key?.startsWith("franchmap.brandReply.v1.")) {
+    render();
+    if (state.dialog === "detail") showDetail(state.focus);
+  }
   if (e.key === storageKey) {
     try {
       mine = JSON.parse(e.newValue || "[]");
@@ -1020,6 +1321,26 @@ window.addEventListener("storage", (e) => {
     }
   }
 });
+async function loadInventory() {
+  try {
+    const response = await fetch("data/inventory.json", { cache: "no-cache" });
+    if (!response.ok) throw Error();
+    const data = await response.json();
+    if (data.version !== 1 || !Array.isArray(data.records) || !data.imports)
+      throw Error();
+    inventory = data;
+    inventoryError = false;
+  } catch {
+    inventoryError = true;
+  }
+  loadedInventory = true;
+  render();
+  if (state.mode === "inventory") fit();
+  if (!inventoryError && window.location.hash === "#consultas") showReview();
+  const parcel = window.location.hash.match(/^#parcela=(mdc:\d{13})$/);
+  if (parcel && item(parcel[1])) showDetail(parcel[1]);
+}
 render();
+loadInventory();
 if (storeIssue)
   toast("No se pudo leer el almacenamiento de locales del navegador.");

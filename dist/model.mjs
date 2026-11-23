@@ -48,6 +48,8 @@ export const statuses = {
 };
 export const fields = [
   ["area", "Terreno útil", "ft²"],
+  ["totalArea", "Terreno total", "ft²"],
+  ["buildingArea", "Edificio existente", "ft²"],
   ["front", "Frente", "ft"],
   ["traffic", "Tráfico diario", "vehículos/día"],
   ["drive", "Zonificación para drive-thru", "sí/no"],
@@ -178,6 +180,28 @@ function territoryRow(c, list) {
     ask: "Pide a la franquicia el plano territorial aplicable a esta dirección.",
     inputs: [],
   };
+  if (c.imported) {
+    const reply = c.brandReply;
+    if (
+      reply?.siteId === c.id &&
+      reply.sender?.trim() &&
+      reply.text?.trim() &&
+      safeUrl(reply.source) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(reply.date) &&
+      ["available", "unavailable", "inconclusive"].includes(reply.result)
+    ) {
+      row.evidence = reply;
+      row.actual =
+        reply.result === "available"
+          ? "Territorio disponible según respuesta de Culver’s"
+          : reply.result === "unavailable"
+            ? "Territorio no disponible según Culver’s"
+            : "Respuesta recibida sin decisión territorial";
+      row.verdict =
+        reply.result === "inconclusive" ? null : reply.result === "available";
+    }
+    return row;
+  }
   const t = c.territory;
   if (!t?.source || !t.date || (!c.demo && !/^https?:\/\//i.test(t.source)))
     return row;
@@ -272,23 +296,36 @@ export function evaluate(c, list = branches) {
       "Solicita el aforo medio diario del tramo que da frente al terreno.",
     ],
   ]) {
+    const bounded = key === "area" && !isNum(d.area) && isNum(d.totalArea);
+    const reaches = (threshold) =>
+      isNum(d[key])
+        ? d[key] >= threshold
+        : bounded && d.totalArea < threshold
+          ? false
+          : null;
+    const measured = bounded
+      ? fmt(d.totalArea) + " ft² totales · útil sin documentar"
+      : formVal(key, d[key]);
+    const evidence = bounded ? ["totalArea"] : [key];
     row(
       key,
       label,
       "Obligatorio",
       "≥ " + fmt(min) + " " + unit,
-      isNum(d[key]) ? d[key] >= min : null,
+      reaches(min),
       q,
+      evidence,
+      measured,
     );
     row(
       key + "Pref",
       label + " preferido",
       "Preferido",
       "≥ " + fmt(pref) + " " + unit,
-      isNum(d[key]) ? d[key] >= pref : null,
+      reaches(pref),
       q,
-      [key],
-      formVal(key, d[key]),
+      evidence,
+      measured,
     );
   }
   row(
@@ -347,16 +384,23 @@ export function evaluate(c, list = branches) {
     fails,
     prefs: rows.filter((r) => r.kind === "Preferido" && r.verdict === true)
       .length,
-    next: fails.length
-      ? "Confirma con el agente si se puede corregir: " +
-        fails.map((r) => r.name.toLowerCase()).join(", ") +
-        "."
-      : missing[0]?.ask ||
-        (c.availability === "Retirado"
-          ? "El anuncio figura retirado. Pregunta al agente si el inmueble volverá al mercado."
-          : !c.demo && c.availability !== "Disponible"
-            ? "Confirma con el agente que el terreno siga disponible antes de coordinar la visita."
-            : statuses.good.action),
+    next:
+      fails.some((r) => r.key === "area") &&
+      isNum(d.totalArea) &&
+      d.totalArea < 45000
+        ? "Descarta la visita para este formato. Incluso si todo el terreno fuese aprovechable, faltan " +
+          fmt(45000 - d.totalArea) +
+          " ft² para el mínimo."
+        : fails.length
+          ? "Confirma con el agente si se puede corregir: " +
+            fails.map((r) => r.name.toLowerCase()).join(", ") +
+            "."
+          : missing[0]?.ask ||
+            (c.availability === "Retirado"
+              ? "El anuncio figura retirado. Pregunta al agente si el inmueble volverá al mercado."
+              : !c.demo && c.availability !== "Disponible"
+                ? "Confirma con el agente que el terreno siga disponible antes de coordinar la visita."
+                : statuses.good.action),
   };
 }
 const common = {

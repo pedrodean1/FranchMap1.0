@@ -83,7 +83,11 @@ export function editor({ c, dialog, geo, onCleanup, onSave }) {
             'type="number" min="' +
               (key === "seats" ? "1" : "0") +
               '" step="' +
-              (["area", "front", "speed"].includes(key) ? "any" : "1") +
+              (["area", "totalArea", "buildingArea", "front", "speed"].includes(
+                key,
+              )
+                ? "any"
+                : "1") +
               '"',
           ),
     )
@@ -455,6 +459,14 @@ export function editor({ c, dialog, geo, onCleanup, onSave }) {
           raw === "" ? null : unit === "sí/no" ? raw === "true" : Number(raw);
         if (v[key] !== values[key] || !provenance[key]) provenance[key] = src;
       }
+      if (
+        values.area != null &&
+        values.totalArea != null &&
+        values.area > values.totalArea
+      )
+        throw Error(
+          "El terreno útil supera el terreno total. Revisa las medidas.",
+        );
       const method = val("method");
       let territory = null;
       if (method) {

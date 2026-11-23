@@ -8,3 +8,9 @@ La cartografía local deriva de datos de dominio público del U.S. Census Bureau
 - **Condados.** Límites cartográficos generalizados 2024, escala 1:500.000. [Fuente](https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_us_county_500k.zip).
 
 Los archivos GeoJSON usan coordenadas geográficas en orden longitud, latitud. Las posiciones de etiquetas proceden de puntos interiores censales y no representan ayuntamientos o centros comerciales. Los límites políticos y postales son referencias de búsqueda. Los territorios comerciales requieren confirmación de la franquicia.
+
+## Inventario de venta del condado
+
+El catálogo de Miami-Dade determina si la parcela figura en venta. La capa abierta County Owned Property aporta el folio, la posición y el terreno total. El catastro Property Boundary View aporta la superficie del edificio. La consulta se contrasta con todas las páginas del catálogo antes de publicar los ocho terrenos vacantes de mayor superficie. [Catálogo de venta](https://www.miamidade.gov/apps/ISD/RealEstate_Portal/CountyOwnedPropertiesForSale?sortOrder=lot_desc) · [County Owned Property](https://opendata.miamidade.gov/datasets/MDC::county-owned-property/about) · [Open Data Hub](https://opendata.miamidade.gov/)
+
+Para actualizar el inventario del sitio, ejecuta `npm run import:inventory` con Node y curl y publica la versión resultante. La importación conserva las fichas por fuente y folio, mantiene los registros retirados fuera de los resultados y escribe el archivo tras completar la verificación del lote. El catálogo informa la oferta administrativa. El condado publica por separado las licitaciones abiertas.

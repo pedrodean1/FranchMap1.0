@@ -213,10 +213,9 @@ h1 {
 }
 .filters {
   display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) minmax(220px, 1.18fr) minmax(
-      220px,
-      1.72fr
-    ) auto;
+  grid-template-columns:
+    minmax(120px, 0.8fr) minmax(220px, 1.18fr) minmax(220px, 1.72fr)
+    auto;
   gap: 12px;
   align-items: end;
   background: white;
@@ -992,10 +991,9 @@ td .pill {
     gap: 12px;
   }
   .filters {
-    grid-template-columns: minmax(120px, 0.65fr) minmax(175px, 1fr) minmax(
-        160px,
-        1fr
-      ) auto;
+    grid-template-columns:
+      minmax(120px, 0.65fr) minmax(175px, 1fr) minmax(160px, 1fr)
+      auto;
     padding: 12px;
     gap: 8px;
   }
@@ -1172,4 +1170,43 @@ td .pill {
   .dialog-body {
     font-size: 15px;
   }
+}
+#mode-note .text-action {
+  margin-left: auto;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: var(--dark);
+  font: inherit;
+  font-weight: 650;
+}
+.parcel-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  border: 1px solid #dce3d9;
+  border-radius: 8px;
+  padding: 12px;
+  gap: 12px;
+}
+.parcel-facts small,
+.parcel-facts strong {
+  display: block;
+}
+.parcel-facts small {
+  color: var(--sub);
+  margin-bottom: 5px;
+}
+.email-copy {
+  border-top: 1px solid #dce3d9;
+  padding: 12px 0;
+}
+.email-copy p {
+  line-height: 1.55;
+}
+
+.card-decision {
+  display: block;
+  margin-top: 7px;
+  font-size: 13px;
+  color: var(--sub);
+  text-align: left;
 }
