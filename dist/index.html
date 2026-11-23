@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#174f44" />
+    <title>FranchMap · Explorador de locales</title>
+    <meta
+      name="description"
+      content="Explora, evalúa y compara terrenos para franquicias en Miami–Fort Lauderdale."
+    />
+    <link rel="icon" href="mark.svg" />
+    <link rel="stylesheet" href="vendor/leaflet.css" />
+    <link rel="stylesheet" href="app.css" />
+    <script defer src="vendor/leaflet.min.js"></script>
+    <script type="module" src="app.mjs"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-inner">
+        <button
+          class="brand"
+          data-do="explore"
+          aria-label="FranchMap, ir al explorador"
+        >
+          <span id="logo"></span>Franch<span>Map</span>
+        </button>
+        <nav aria-label="Navegación principal">
+          <button data-do="explore" class="active">
+            <i data-i="map"></i>Explorar</button
+          ><button data-do="compare">
+            <i data-i="compare"></i>Comparar
+            <span id="nav-count" hidden>0</span></button
+          ><button data-do="sources"><i data-i="book"></i>Fuentes</button>
+        </nav>
+        <button class="primary add" data-do="add">
+          <i data-i="plus"></i>Agregar local
+        </button>
+      </div>
+    </header>
+    <main>
+      <div class="heading">
+        <div>
+          <p class="location"><i data-i="pin"></i> Miami-Dade, Florida</p>
+          <h1>Explorador de locales</h1>
+        </div>
+        <button class="quiet source-link" data-do="rules">
+          <i data-i="doc"></i>Criterios de la marca
+        </button>
+      </div>
+      <form class="filters" id="filters">
+        <label
+          ><span>Franquicia</span
+          ><span class="control"
+            ><i data-i="store"></i
+            ><select id="brand" aria-label="Franquicia">
+              <option>Culver’s</option></select
+            ><i data-i="chevron"></i></span
+        ></label>
+        <label
+          ><span>Formato de local</span
+          ><span class="control"
+            ><i data-i="building"></i
+            ><select aria-label="Formato de local" id="format">
+              <option>Independiente con drive-thru</option></select
+            ><i data-i="chevron"></i></span
+        ></label>
+        <label class="zone-label"
+          ><span>Zona de búsqueda</span
+          ><span class="control"
+            ><i data-i="search"></i
+            ><input
+              id="zone-query"
+              autocomplete="off"
+              list="zones"
+              placeholder="Culver’s en Miami-Dade, ciudad o ZIP"
+              aria-label="Zona de búsqueda"
+            /><datalist id="zones"></datalist
+            ><button
+              aria-label="Borrar filtro de zona"
+              data-do="reset-zone"
+              type="button"
+              hidden
+              id="clear-zone"
+            >
+              ×
+            </button></span
+          ></label
+        ><button class="search-btn" type="submit">Buscar</button>
+      </form>
+      <div id="workspace">
+        <section class="results" aria-label="Lista de candidatos">
+          <div class="list-top">
+            <div class="list-title">
+              <h2>Locales candidatos</h2>
+              <span id="result-count" class="count">0</span>
+            </div>
+            <div class="segments">
+              <button data-do="inventory" class="chosen">Inventario</button
+              ><button data-do="demo">Ejemplos</button
+              ><button data-do="mine">Mis locales</button>
+            </div>
+          </div>
+          <p id="mode-note" class="mode-note"></p>
+          <div id="cards"></div>
+        </section>
+        <section aria-label="Mapa de ubicaciones" id="map-panel">
+          <div id="map" aria-label="Mapa interactivo del sur de Florida"></div>
+          <div class="map-tools">
+            <button class="map-chip" data-do="layers" aria-expanded="false">
+              <i data-i="layers"></i>Capas</button
+            ><button class="map-chip" id="draw" data-do="draw">
+              <i data-i="polygon"></i>Dibujar zona
+            </button>
+          </div>
+          <div id="layer-panel" hidden></div>
+          <div id="map-instruction" hidden></div>
+          <div class="map-buttons">
+            <button title="Acercar" aria-label="Acercar" data-do="zoom-in">
+              <i data-i="plus"></i></button
+            ><button title="Alejar" aria-label="Alejar" data-do="zoom-out">
+              <i data-i="minus"></i></button
+            ><button
+              title="Centrar candidatos"
+              aria-label="Centrar candidatos"
+              data-do="fit"
+            >
+              <i data-i="target"></i>
+            </button>
+          </div>
+          <div class="legend">
+            <span class="legend-title">Leyenda del mapa</span
+            ><span><b class="legend-pin"></b>Local candidato</span
+            ><span><b class="legend-store"></b>Sucursal</span
+            ><span><b class="legend-ter"></b>Territorio</span>
+          </div>
+        </section>
+      </div>
+      <p id="live" class="sr" role="status" aria-live="polite"></p>
+    </main>
+    <dialog id="modal"><div id="dialog-content"></div></dialog>
+    <div id="toast" role="status" hidden></div>
+  </body>
+</html>
